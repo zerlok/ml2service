@@ -2,6 +2,9 @@ import typing as t
 
 from ml2service.models.base import Model, ModelTrainer
 from ml2service.services.base import (
+    ModelPredictionService,
+    ModelRemovingService,
+    ModelTrainingService,
     PredictModelInternalErrorResponse,
     PredictModelNotFoundErrorResponse,
     PredictRequest,
@@ -9,7 +12,6 @@ from ml2service.services.base import (
     RemoveModelNotFoundErrorResponse,
     RemoveRequest,
     RemoveSuccessResponse,
-    Service,
     TrainInternalErrorResponse,
     TrainRequest,
     TrainSuccessResponse,
@@ -24,9 +26,11 @@ T_predict_input = t.TypeVar("T_predict_input")
 T_predict_output = t.TypeVar("T_predict_output")
 
 
-class StoredModelService(
+class DynamicModelService(
     t.Generic[K, T_train_input, T_predict_input, T_predict_output],
-    Service[K, T_train_input, T_predict_input, T_predict_output],
+    ModelTrainingService[K, T_train_input],
+    ModelPredictionService[K, T_predict_input, T_predict_output],
+    ModelRemovingService[K],
 ):
     def __init__(
             self,

@@ -1,7 +1,7 @@
 import typing as t
 
 # noinspection PyPackageRequirements
-from fastapi import APIRouter, Body, FastAPI, HTTPException
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Path
 # noinspection PyPackageRequirements
 from starlette import status
 # noinspection PyPackageRequirements
@@ -9,6 +9,10 @@ from uvicorn import Config, Server
 
 from ml2service.models.loader import ModuleInfo
 from ml2service.services.base import (
+    ModelPredictionService,
+    ModelRemovingService,
+    ModelService,
+    ModelTrainingService,
     PredictModelInternalErrorResponse,
     PredictModelNotFoundErrorResponse,
     PredictRequest,
@@ -16,16 +20,16 @@ from ml2service.services.base import (
     RemoveModelNotFoundErrorResponse,
     RemoveRequest,
     RemoveSuccessResponse,
-    Service,
     TrainInternalErrorResponse,
     TrainRequest,
     TrainSuccessResponse,
 )
-from ml2service.services.factories import ServiceRunnerFactory
-from ml2service.services.runners.base import ServiceRunner
+from ml2service.services.runners.base import ServiceRunner, ServiceRunnerFactory
 from ml2service.services.runners.fastapi.runner import UvicornServiceRunner
+from ml2service.services.static import StaticModelService
 from ml2service.strict_typing import raise_not_exhaustive
 
+F = t.TypeVar("F")
 T_train_input = t.TypeVar("T_train_input")
 T_predict_input = t.TypeVar("T_predict_input")
 T_predict_output = t.TypeVar("T_predict_output")
@@ -33,7 +37,7 @@ T_predict_output = t.TypeVar("T_predict_output")
 
 class FastAPIServiceRunnerFactory(
     t.Generic[T_train_input, T_predict_input, T_predict_output],
-    ServiceRunnerFactory[str, T_train_input, T_predict_input, T_predict_output],
+    ServiceRunnerFactory,
 ):
 
     def __init__(
@@ -52,7 +56,7 @@ class FastAPIServiceRunnerFactory(
 
     def create_service_runner(
             self,
-            service: Service[str, T_train_input, T_predict_input, T_predict_output],
+            service: ModelService,
     ) -> ServiceRunner:
         app = self.__create_fastapi()
 
@@ -70,66 +74,107 @@ class FastAPIServiceRunnerFactory(
         return FastAPI()
 
     def __create_api_router(self, prefix: str) -> APIRouter:
-        if self.__api_router_factory is not None:
-            return self.__api_router_factory(prefix)
+        return (
+            self.__api_router_factory(prefix)
+            if self.__api_router_factory is not None
+            else APIRouter(prefix=prefix)
+        )
 
-        return APIRouter(prefix=prefix)
+    def __create_router_registrator(self, router: APIRouter) -> t.Callable[[str, str, int], t.Callable[[F], F]]:
+
+        def setup(path: str, method: str, success_status_code: int) -> t.Callable[[F], F]:
+            def register(func: F) -> F:
+                return router.api_route(
+                    path=path,
+                    response_model=func.__annotations__.get("return"),
+                    status_code=success_status_code,
+                    methods=[method],
+                )(func)
+
+            return register
+
+        return setup
 
     def __create_service_router(
             self,
-            service: Service[str, T_train_input, T_predict_input, T_predict_output],
+            service: ModelService,
     ) -> APIRouter:
-        router = self.__create_api_router("/{key}")
+        # noinspection PyPep8Naming
+        TrainInput, PredictInput, PredictOutput = (
+            self.__info.train_input_type,
+            self.__info.predict_input_type,
+            self.__info.predict_output_type,
+        )
 
-        TrainInput, PredictInput, PredictOutput \
-            = self.__info.train_input_type, self.__info.predict_input_type, self.__info.predict_output_type
+        if isinstance(service, StaticModelService):
+            router = self.__create_api_router("")
+            registrator = self.__create_router_registrator(router)
 
-        @router.put("/", status_code=status.HTTP_201_CREATED)
-        def handle_train(
-                key: str,
-                input_: TrainInput = Body(alias="input"),
-        ) -> None:
-            response = service.train(TrainRequest(key=key, input_=input_))
-            if isinstance(response, TrainSuccessResponse):
-                return None
+            def make_constant_key() -> str:
+                return ""
 
-            elif isinstance(response, TrainInternalErrorResponse):
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                    detail={"error": str(response.error)})
+            key_dependency = Depends(make_constant_key)
 
-            else:
-                return raise_not_exhaustive(response)
+        else:
+            router = self.__create_api_router("/{key}")
+            registrator = self.__create_router_registrator(router)
+            key_dependency = Path()
 
-        @router.post("/", response_model=PredictOutput)
-        def handle_predict(
-                key: str,
-                input_: PredictInput = Body(alias="input"),
-        ) -> PredictOutput:
-            response = service.predict(PredictRequest(key=key, input_=input_))
-            if isinstance(response, PredictSuccessResponse):
-                return response.output
+        if isinstance(service, ModelTrainingService):
+            model_training_service = service
 
-            elif isinstance(response, PredictModelNotFoundErrorResponse):
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            @registrator("/", "PUT", status.HTTP_201_CREATED)
+            def handle_train(
+                    key: str = key_dependency,
+                    input_: TrainInput = Body(alias="input"),
+            ) -> None:
+                response = model_training_service.train(TrainRequest(key=key, input_=input_))
+                if isinstance(response, TrainSuccessResponse):
+                    return None
 
-            elif isinstance(response, PredictModelInternalErrorResponse):
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                    detail={"error": str(response.error)})
+                elif isinstance(response, TrainInternalErrorResponse):
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                        detail={"error": str(response.error)})
 
-            else:
-                return raise_not_exhaustive(response)
+                else:
+                    return raise_not_exhaustive(response)
 
-        @router.delete("/", status_code=status.HTTP_202_ACCEPTED)
-        def handle_remove(key: str) -> None:
-            response = service.remove(RemoveRequest(key=key))
-            if isinstance(response, RemoveSuccessResponse):
-                return None
+        if isinstance(service, ModelPredictionService):
+            model_prediction_service = service
 
-            elif isinstance(response, RemoveModelNotFoundErrorResponse):
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            @registrator("/", "POST", status.HTTP_200_OK)
+            def handle_predict(
+                    key: str = key_dependency,
+                    input_: PredictInput = Body(alias="input"),
+            ) -> PredictOutput:
+                response = model_prediction_service.predict(PredictRequest(key=key, input_=input_))
+                if isinstance(response, PredictSuccessResponse):
+                    return response.output
 
-            else:
-                return raise_not_exhaustive(response)
+                elif isinstance(response, PredictModelNotFoundErrorResponse):
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+                elif isinstance(response, PredictModelInternalErrorResponse):
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                        detail={"error": str(response.error)})
+
+                else:
+                    return raise_not_exhaustive(response)
+
+        if isinstance(service, ModelRemovingService):
+            model_removing_service = service
+
+            @registrator("/", "DELETE", status.HTTP_202_ACCEPTED)
+            def handle_remove(key: str) -> None:
+                response = model_removing_service.remove(RemoveRequest(key=key))
+                if isinstance(response, RemoveSuccessResponse):
+                    return None
+
+                elif isinstance(response, RemoveModelNotFoundErrorResponse):
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+                else:
+                    return raise_not_exhaustive(response)
 
         return router
 

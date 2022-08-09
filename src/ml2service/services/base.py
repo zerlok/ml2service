@@ -5,9 +5,9 @@ from dataclasses import dataclass
 K = t.TypeVar("K")
 T = t.TypeVar("T")
 
-T_train_input = t.TypeVar("T_train_input")
-T_predict_input = t.TypeVar("T_predict_input")
-T_predict_output = t.TypeVar("T_predict_output")
+T_train_input = t.TypeVar("T_train_input", contravariant=True)
+T_predict_input = t.TypeVar("T_predict_input", contravariant=True)
+T_predict_output = t.TypeVar("T_predict_output", covariant=True)
 
 
 # noinspection DuplicatedCode
@@ -67,8 +67,11 @@ class RemoveModelNotFoundErrorResponse(t.Generic[K]):
     key: K
 
 
-class Service(t.Generic[K, T_train_input, T_predict_input, T_predict_output], metaclass=abc.ABCMeta):
+class ModelService(metaclass=abc.ABCMeta):
+    pass
 
+
+class ModelTrainingService(t.Generic[K, T_train_input], ModelService, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def train(
             self,
@@ -79,6 +82,8 @@ class Service(t.Generic[K, T_train_input, T_predict_input, T_predict_output], me
     ]:
         raise NotImplementedError
 
+
+class ModelPredictionService(t.Generic[K, T_predict_input, T_predict_output], ModelService, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def predict(
             self,
@@ -90,6 +95,8 @@ class Service(t.Generic[K, T_train_input, T_predict_input, T_predict_output], me
     ]:
         raise NotImplementedError
 
+
+class ModelRemovingService(t.Generic[K], ModelService, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def remove(
             self,
