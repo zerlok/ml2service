@@ -38,7 +38,7 @@ jobs:
           poetry-version: 1.2.0
       - name: Install dependencies
         run: |
-          poetry
+          poetry install --all-extras
       - name: Perform typing check
         run: |
           poetry run mypy
