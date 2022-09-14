@@ -11,10 +11,12 @@ click = "^8.1.3"
 fastapi = { version = "^0.79.0", optional = true }
 uvicorn = { extras = ["standard"], version = "^0.18.2", optional = true }
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 mypy = "^0.971"
 pytest = "^7.1.2"
 pytest-cov = "^3.0.0"
+requests = "^2.28.1"
+types-requests = "^2.28.10"
 
 [tool.poetry.extras]
 fastapi-uvicorn = ["fastapi", "uvicorn"]
@@ -66,6 +68,29 @@ warn_unused_configs = true
 module = ["uvicorn.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["ml2service.cli"]
+disallow_any_expr = false
+disallow_any_unimported = false
+
+[[tool.mypy.overrides]]
+module = ["ml2service.services.runners.fastapi.*"]
+disallow_any_expr = false
+disallow_any_unimported = false
+
+[[tool.mypy.overrides]]
+module = ["ml2service.models.loader"]
+disallow_any_expr = false
+disallow_any_explicit = false
+disallow_any_unimported = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_any_expr = false
+disallow_any_explicit = false
+disallow_any_unimported = false
+warn_return_any = false
 
 # ---- pytest settings ----
 [tool.pytest.ini_options]
@@ -82,6 +107,9 @@ testpaths = ["./tests"]
 
 [tool.coverage.run]
 branch = true
+omit = [
+    "*/examples/*",
+]
 
 [tool.coverage.report]
 exclude_lines = [

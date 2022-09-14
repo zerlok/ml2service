@@ -16,4 +16,4 @@ class UvicornServiceRunner(ServiceRunner):
         self.__server.run()
 
     def stop(self) -> None:
-        pass
+        self.__server.should_exit = True

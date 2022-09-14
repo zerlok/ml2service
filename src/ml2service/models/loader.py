@@ -32,7 +32,7 @@ class EntrypointLoader:
         obj = func(*args)
 
         if not isinstance(obj, ModelTrainer):
-            raise TypeError("model or model trainer expected", obj)
+            raise TypeError("model trainer expected", obj)
 
         train_input_type, predict_input_type, predict_output_type = get_generic_type_vars(ModelTrainer, obj)
 

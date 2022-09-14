@@ -17,7 +17,7 @@ from ml2service.storages.memoize import MemoizeStorage
 
 @dataclass()
 class CLIContext:
-    info: t.Optional[ModuleInfo] = None
+    info: t.Optional[ModuleInfo[object, object, object]] = None
     service: t.Optional[ModelService] = None
     runner: t.Optional[ServiceRunner] = None
 
@@ -33,19 +33,36 @@ def cli(context: click.Context, entrypoint: str, args: t.Sequence[str]) -> None:
         info = loader.load(entrypoint, args)
 
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return context.fail(f"failed to load '{entrypoint}' entrypoint: {err!r}")
+        context.fail(f"failed to load '{entrypoint}' entrypoint: {err!r}")
+        # FIXME: mypy knows that this statement is unreachable, but PyCharm don't
+        return  # type: ignore[unreachable]
 
     context.obj = CLIContext(info=info)
 
 
-@cli.result_callback()
+@cli.command("info")
+@click.pass_obj
+def show_info(context: CLIContext) -> None:
+    info = context.info
+    click.echo(f"trainer: {info.trainer if info is not None else None!r}")
+    click.echo(f"train input type: {info.train_input_type if info is not None else None!r}")
+    click.echo(f"predict input type: {info.predict_input_type if info is not None else None!r}")
+    click.echo(f"predict output type: {info.predict_output_type if info is not None else None!r}")
+
+
+@cli.group("run")
+def run() -> None:
+    pass
+
+
+@run.result_callback()
 @click.pass_obj
 def start_service_runner(context: CLIContext, *_: object, **__: object) -> None:
     if context.runner is not None:
         context.runner.start()
 
 
-@cli.group("static")
+@run.group("static")
 @click.argument("input", type=click.Path(exists=True, resolve_path=True, path_type=Path))
 @click.pass_obj
 @click.pass_context
@@ -54,13 +71,15 @@ def run_static(click_context: click.Context, context: CLIContext, input: Path) -
     assert info is not None
 
     if not issubclass(info.train_input_type, Path):
-        return click_context.fail(f"specified entrypoint expects {info.train_input_type}, but must accept {Path}")
+        click_context.fail(f"specified entrypoint expects {info.train_input_type}, but must accept {Path}")
+        # FIXME: mypy knows that this statement is unreachable, but PyCharm don't
+        return  # type: ignore[unreachable]
 
     model = info.trainer.train(input)
     context.service = StaticModelService(model)
 
 
-@cli.group("dynamic")
+@run.group("dynamic")
 @click.option("--memoize/--no-memoize", "memoize_enabled", is_flag=True, default=False)
 @click.pass_obj
 def run_dynamic(context: CLIContext, memoize_enabled: bool) -> None:
@@ -87,7 +106,9 @@ def http(click_context: click.Context, context: CLIContext, port: int) -> None:
         from uvicorn import Config
 
     except ImportError as err:
-        return click_context.fail(f"failed to import http dependencies: {err!r}")
+        click_context.fail(f"failed to import http dependencies: {err!r}")
+        # FIXME: mypy knows that this statement is unreachable, but PyCharm don't
+        return  # type: ignore[unreachable]
 
     from ml2service.services.runners.fastapi.factory import FastAPIServiceRunnerFactory
 

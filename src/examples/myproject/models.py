@@ -1,4 +1,5 @@
 import json
+import typing as t
 from pathlib import Path
 
 from ml2service.models.base import Model, ModelTrainer
@@ -26,7 +27,7 @@ class FooStaticModelTrainer(ModelTrainer[Path, int, int]):
 
     def train(self, input_: Path) -> Model[int, int]:
         with input_.open("r") as f:
-            data = json.load(f)
+            data = t.cast(object, json.load(f))
             if not isinstance(data, int):
                 raise ValueError("int was expected", data, input_)
 

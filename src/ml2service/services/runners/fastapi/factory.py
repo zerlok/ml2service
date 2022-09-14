@@ -89,7 +89,7 @@ class FastAPIServiceRunnerFactory(
                     response_model=func.__annotations__.get("return"),
                     status_code=success_status_code,
                     methods=[method],
-                )(func)
+                )(func)  # type: ignore[type-var]
 
             return register
 
@@ -121,12 +121,13 @@ class FastAPIServiceRunnerFactory(
             key_dependency = Path()
 
         if isinstance(service, ModelTrainingService):
-            model_training_service = service
+            model_training_service: ModelTrainingService[  # type: ignore[valid-type]
+                str, TrainInput] = service
 
             @registrator("/", "PUT", status.HTTP_201_CREATED)
             def handle_train(
                     key: str = key_dependency,
-                    input_: TrainInput = Body(alias="input"),
+                    input_: TrainInput = Body(alias="input"),  # type: ignore[valid-type]
             ) -> None:
                 response = model_training_service.train(TrainRequest(key=key, input_=input_))
                 if isinstance(response, TrainSuccessResponse):
@@ -137,16 +138,17 @@ class FastAPIServiceRunnerFactory(
                                         detail={"error": str(response.error)})
 
                 else:
-                    return raise_not_exhaustive(response)
+                    raise_not_exhaustive(response)
 
         if isinstance(service, ModelPredictionService):
-            model_prediction_service = service
+            model_prediction_service: ModelPredictionService[  # type: ignore[valid-type]
+                str, PredictInput, PredictOutput] = service
 
             @registrator("/", "POST", status.HTTP_200_OK)
             def handle_predict(
                     key: str = key_dependency,
-                    input_: PredictInput = Body(alias="input"),
-            ) -> PredictOutput:
+                    input_: PredictInput = Body(alias="input"),  # type: ignore[valid-type]
+            ) -> PredictOutput:  # type: ignore[valid-type]
                 response = model_prediction_service.predict(PredictRequest(key=key, input_=input_))
                 if isinstance(response, PredictSuccessResponse):
                     return response.output
@@ -159,7 +161,7 @@ class FastAPIServiceRunnerFactory(
                                         detail={"error": str(response.error)})
 
                 else:
-                    return raise_not_exhaustive(response)
+                    raise_not_exhaustive(response)
 
         if isinstance(service, ModelRemovingService):
             model_removing_service = service
@@ -174,7 +176,7 @@ class FastAPIServiceRunnerFactory(
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
                 else:
-                    return raise_not_exhaustive(response)
+                    raise_not_exhaustive(response)
 
         return router
 

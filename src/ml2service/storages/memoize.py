@@ -12,12 +12,15 @@ class MemoizeStorage(t.Generic[K, V], Storage[K, V]):
 
     def __init__(self, inner: Storage[K, V]) -> None:
         self.__inner = inner
-        self.__cached: t.Dict[K, t.Optional[V]] = {}
+        self.__cached: t.Dict[K, t.Union[t.Optional[V], object]] = {}
 
     def get(self, key: K) -> t.Optional[V]:
-        value = self.__cached.get(key, self.__MISSED)
-        if value is self.__MISSED:
+        found = self.__cached.get(key, self.__MISSED)
+        if found is self.__MISSED:
             value = self.__cached[key] = self.__inner.get(key)
+
+        else:
+            value = t.cast(t.Optional[V], found)
 
         return value
 
